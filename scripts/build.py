@@ -8,6 +8,7 @@ from abc import ABC
 from importlib import import_module
 from re import match, fullmatch, I
 from argparse import ArgumentParser
+from config import Config
 
 
 class Setup:
@@ -78,10 +79,7 @@ class Dnf(PackageManagerAbstract):
 def _parse_build_targets(targets):
     result = []
     for target in targets:
-        assert fullmatch(r'^[-\w]+=[-\w]+\/[-\w]+:[-\w]+$', target, I), \
-            'build_target should be in the form foo=base/name:tag, not: {}'.format(target)
-        pair = target.split('=')
-        result.append({'dir': pair[0], 'tag': pair[1]})
+        result.append({'dir': Config.project_dir(target), 'tag': Config.image_name(target)})
     return result
 
 
@@ -113,15 +111,10 @@ def docker_factory(
     return docker_setup
 
 
-# pm_setup, docker_setup = factory()
-
-# # pm_setup.system_install(pkgs=['python3-docker', 'docker'])
-# # docker_setup.docker_install(targets=[{'tag': '0b10/weechat:edge', 'dir': 'weechat'}])
-
-# # 'unix://var/run/docker.sock'
 parser = ArgumentParser(description="Build/install docker images, and associated files/scripts")
 parser.add_argument("--build",
                     action="store",
+                    choices=Config.all_aliases(),
                     nargs="+",
                     dest="build_targets",
                     help="build the local docker files")

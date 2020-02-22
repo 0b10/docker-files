@@ -1,109 +1,23 @@
 #!/usr/bin/env python3
+import sys
+from os.path import join, realpath, dirname
+sys.path.append(dirname(realpath(__file__)))
 from subprocess import check_call, PIPE, check_output
 from pathlib import Path
 import argparse
 import re
 from os import makedirs
 from shutil import rmtree
-
-WEECHAT_HOME = Path().home() / '.weechat'
-WEECHAT_COW = Path().home() / '.weechat_cow'
-WEECHAT_UPPERDIR = WEECHAT_COW / 'upperdir'
-WEECHAT_WORKDIR = WEECHAT_COW / 'workdir'
-WEECHAT_MERGED = WEECHAT_COW / 'merged'
-
-
-CONFIG = {
-    'global': {
-        'run_options': [
-            '--rm',
-            '--interactive',
-            '--tty',
-            '--cap-drop=ALL',
-            '--read-only',
-            '--privileged=False'
-        ]
-    },
-    'weechat': {
-        'image': '0b10/weechat:edge',
-        'run_options': [
-            '--volume',
-            '{}:/weechat:rw'.format(WEECHAT_MERGED)
-        ],
-        'pre': [
-            {
-                'description': 'discarding any previous overlay data',
-                'job': lambda: _rm_dirs(dirs=[WEECHAT_UPPERDIR], ignore_errors=True)
-            },
-            {
-                'description': 'creating overlay directories',
-                'job': lambda: _make_dirs(
-                    [WEECHAT_HOME, WEECHAT_UPPERDIR, WEECHAT_WORKDIR, WEECHAT_MERGED]
-                )
-            },
-            {
-                'description': 'mounting overlay fs',
-                'job': lambda: _mount_overlay(lower=WEECHAT_HOME, upper=WEECHAT_UPPERDIR,
-                                              work=WEECHAT_WORKDIR, merged=WEECHAT_MERGED)
-            }
-        ],
-        'post': [
-            {
-                'description': 'unmounting overlay fs',
-                'job': lambda: _unmount_overlay(mountpoint=WEECHAT_MERGED)
-            },
-            {
-                'description': 'discarding overlay data',
-                'job': lambda: _rm_dirs(dirs=[WEECHAT_UPPERDIR], clean=True)
-            }
-        ],
-    }
-}
-
-ALIAS = {
-    'weechat': 'weechat',
-    'wc': 'weechat',
-}
-
-
-def _get_config(alias):
-# {'tag': '0b10/weechat:edge', 'dir': 'weechat'}
-    name = ALIAS.get(alias, alias)
-    return CONFIG[name]
-
-
-def _mount_overlay(lower, upper, work, merged):
-    check_output(['sudo', 'mount', '-t', 'overlay', 'overlay', '-o',
-                  'lowerdir={0},upperdir={1},workdir={2}'.format(lower, upper, work),
-                  merged], stderr=PIPE)
-
-
-def _unmount_overlay(mountpoint):
-    check_output(['sudo', 'umount', mountpoint], stderr=PIPE)
-
-
-def _make_dirs(dirs):
-    assert type(dirs) is list, '"dirs" to be created should be a list'
-    for dir_ in dirs:
-        makedirs(dir_, mode=0o770, exist_ok=True)
-
-
-def _rm_dirs(dirs, clean=False, ignore_errors=False):
-    assert type(dirs) is list, '"dirs" to be removed should be a list'
-    for dir_ in dirs:
-        rmtree(dir_, ignore_errors=ignore_errors)
-
-    if clean:
-        _make_dirs(dirs)
+from config import Config
 
 
 def run(target):
-    container_config = _get_config(target)
+    container_config = Config.get(target)
     image = container_config['image']
-    name = ALIAS[target]
+    name = Config.alias(target)
     pre = container_config['pre']
     container_run_opts = container_config.get('run_options', [])
-    global_run_opts = _get_config('global').get('run_options', [])
+    global_run_opts = Config.get('global').get('run_options', [])
 
     # run jobs before - mounting etc
     if pre is not None:
@@ -128,9 +42,9 @@ def run(target):
 
 
 def stop(target):
-    config = _get_config(target)
+    config = Config.get(target)
     image = config['image']
-    name = ALIAS[target]
+    name = Config.alias(target)
 
     cid_args = ['docker', 'ps', '--quiet', '--filter', 'ancestor={}'.format(image)]
 
